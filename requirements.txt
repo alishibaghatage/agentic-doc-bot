@@ -5,3 +5,5 @@ sentence_transformers
 huggingface-hub
 faiss-cpu
 pypdf
+langchain_text_splitters
+
