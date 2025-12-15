@@ -2,53 +2,91 @@ import streamlit as st
 import os
 import tempfile
 
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFacePipeline
-from langchain.chains import RetrievalQA
+from pypdf import PdfReader
+from sentence_transformers import SentenceTransformer
+import faiss
+import numpy as np
 from transformers import pipeline
 
-# Streamlit page setup
-st.set_page_config(page_title="AI Document Q&A Agent")
+# ---------------- PAGE SETUP ----------------
+st.set_page_config(page_title="AI Document Q&A Assistant")
 st.title("📄 AI Document Q&A Assistant")
 
-# PDF uploader
+# ---------------- LOAD MODELS ----------------
+@st.cache_resource
+def load_models():
+    embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    llm = pipeline(
+        "text2text-generation",
+        model="google/flan-t5-base",
+        max_length=256
+    )
+    return embedder, llm
+
+embedder, llm = load_models()
+
+# ---------------- PDF TEXT EXTRACT ----------------
+def extract_text_from_pdf(file_path):
+    reader = PdfReader(file_path)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text() + "\n"
+    return text
+
+# ---------------- TEXT CHUNKING ----------------
+def chunk_text(text, chunk_size=500, overlap=50):
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        start = end - overlap
+    return chunks
+
+# ---------------- VECTOR STORE ----------------
+def create_faiss_index(chunks):
+    embeddings = embedder.encode(chunks)
+    dim = embeddings.shape[1]
+    index = faiss.IndexFlatL2(dim)
+    index.add(np.array(embeddings))
+    return index, chunks
+
+# ---------------- UI ----------------
 uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
 
 if uploaded_file:
-    # Save uploaded file temporarily
-    temp_file_path = os.path.join("temp_uploaded.pdf")
-    with open(temp_file_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(uploaded_file.read())
+        pdf_path = tmp.name
 
-    # Load PDF from saved path
-    loader = PyPDFLoader(temp_file_path)
-    documents = loader.load()
+    text = extract_text_from_pdf(pdf_path)
+    chunks = chunk_text(text)
+    index, stored_chunks = create_faiss_index(chunks)
 
-    # Split text into chunks
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    docs = splitter.split_documents(documents)
+    st.success("PDF processed successfully ✅")
 
-    # Create embeddings and vector store
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    vector_db = FAISS.from_documents(docs, embeddings)
-
-    # Use local HuggingFace pipeline for LLM
-    pipe = pipeline("text2text-generation", model="google/flan-t5-base", max_length=256)
-    llm = HuggingFacePipeline(pipeline=pipe)
-
-    # Create retrieval-based QA chain
-    qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=vector_db.as_retriever())
-
-    # User question input
     query = st.text_input("Ask something from the document:")
+
     if query:
+        query_embedding = embedder.encode([query])
+        D, I = index.search(np.array(query_embedding), k=3)
+
+        context = " ".join([stored_chunks[i] for i in I[0]])
+
+        prompt = f"""
+        Answer the question based on the context below.
+
+        Context:
+        {context}
+
+        Question:
+        {query}
+
+        Answer:
+        """
+
         with st.spinner("Thinking..."):
-            result = qa_chain.run(query)
-            st.write("### Answer:")
-            st.write(result)
+            answer = llm(prompt)[0]["generated_text"]
 
-
-
+        st.write("### Answer:")
+        st.write(answer)
