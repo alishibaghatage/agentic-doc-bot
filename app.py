@@ -1,11 +1,13 @@
 import streamlit as st
 import os
+import tempfile
+
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFacePipeline
-from langchain.chains.retrieval_qa.base import RetrievalQA
+from langchain.chains import RetrievalQA
 from transformers import pipeline
 
 # Streamlit page setup
@@ -47,5 +49,6 @@ if uploaded_file:
             result = qa_chain.run(query)
             st.write("### Answer:")
             st.write(result)
+
 
 
