@@ -1,10 +1,7 @@
 streamlit
-langchain
-langchain_community
-langchain_text_splitters
-langchain_huggingface
-sentence_transformers
-huggingface-hub
-faiss-cpu
 pypdf
+sentence-transformers
+faiss-cpu
 transformers
+torch
+numpy
