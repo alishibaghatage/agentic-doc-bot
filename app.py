@@ -15,11 +15,15 @@ st.title("📄 AI Document Q&A Assistant")
 # ---------------- LOAD MODELS ----------------
 @st.cache_resource
 def load_models():
+    # Embedder for semantic search
     embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    
+    # LLM for text generation using supported pipeline task
     llm = pipeline(
-        "text2text-generation",
+        task="text-generation",          # Changed from 'text2text-generation'
         model="google/flan-t5-base",
-        max_length=256
+        device=-1,                       # CPU usage
+        max_new_tokens=256               # Compatible with text-generation
     )
     return embedder, llm
 
@@ -30,7 +34,9 @@ def extract_text_from_pdf(file_path):
     reader = PdfReader(file_path)
     text = ""
     for page in reader.pages:
-        text += page.extract_text() + "\n"
+        page_text = page.extract_text()
+        if page_text:
+            text += page_text + "\n"
     return text
 
 # ---------------- TEXT CHUNKING ----------------
@@ -86,7 +92,8 @@ if uploaded_file:
         """
 
         with st.spinner("Thinking..."):
-            answer = llm(prompt)[0]["generated_text"]
+            answer = llm(prompt, do_sample=False)[0]['generated_text']
 
         st.write("### Answer:")
         st.write(answer)
+
